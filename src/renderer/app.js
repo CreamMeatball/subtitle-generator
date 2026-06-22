@@ -18,6 +18,17 @@ function isVideoFile(name) {
   const i = (name || '').lastIndexOf('.');
   return i >= 0 && VIDEO_EXTS.includes(name.slice(i).toLowerCase());
 }
+// 익명 사용 통계(설치/실행 수) 카운터 엔드포인트.
+// Cloudflare Worker 배포 후 그 URL을 여기에 넣으세요. 비워두면 아무것도 전송 안 함.
+// 예: 'https://subgen-counter.<your-subdomain>.workers.dev'
+const ANALYTICS_URL = 'https://subgen-counter.pch5445.workers.dev';
+
+// '건의하기' 전송용 Web3Forms access key.
+// https://web3forms.com 에서 수신 이메일(subtitlegeneratorai@gmail.com)로 키를 발급받아 여기에 넣으세요.
+// 실제 수신 메일 주소는 이 키 뒤에 숨겨져 사용자에게 노출되지 않습니다.
+// 비워두면 건의 전송이 비활성화됩니다.
+const FEEDBACK_ACCESS_KEY = '6bc5b494-7723-4311-95ea-56285a173116';
+
 const LANGS = [
   ['auto', '자동 감지'], ['ko', '한국어'], ['en', '영어'], ['ja', '일본어'],
   ['zh', '중국어'], ['es', '스페인어'], ['fr', '프랑스어'], ['de', '독일어'],
@@ -49,6 +60,7 @@ const DEFAULTS = {
   fmt: 'srt', concurrency: 1, maxDur: 7, wordTs: false,
   reduceHallu: false, overwrite: 'overwrite', subBackup: 'backup',
   theme: 'night', apiNoticeShown: false, tutorialDone: false, updateMode: 'auto',
+  analytics: true,
   backend: 'none', deeplKey: '', googleKey: '', kakaoKey: '', prompt: '',
   tuningProfiles: DEFAULT_TUNING.map((p) => ({ ...p })),
   transProfiles: DEFAULT_TRANS.map((p) => ({ ...p })),
@@ -300,6 +312,7 @@ function applySettingsToUI() {
   $('setOverwrite').value = settings.overwrite || 'overwrite';
   $('setSubBackup').value = settings.subBackup || 'backup';
   $('setAutoUpdate').value = settings.updateMode || 'auto';
+  $('setAnalytics').checked = settings.analytics !== false;
   $('setPrompt').value = settings.prompt || '';
   loadProfEditor(profEditId || settings.profileId ||
     ((settings.tuningProfiles && settings.tuningProfiles[0]) || {}).id);
@@ -513,6 +526,72 @@ function applyTheme() {
   document.body.classList.toggle('day', settings.theme === 'day');
   $('themeBtn').textContent = settings.theme === 'day' ? '☀️' : '🌙';
 }
+
+// 익명 실행 통계 핑(개인정보 없음). install=최초 1회, launch=실행마다. 설정에서 끌 수 있음.
+function pingAnalytics() {
+  if (!ANALYTICS_URL || settings.analytics === false) return;
+  const send = (event) => {
+    try {
+      fetch(`${ANALYTICS_URL}?event=${event}`, { method: 'POST', mode: 'no-cors', keepalive: true })
+        .catch(() => {});
+    } catch (e) { /* noop */ }
+  };
+  try {
+    if (!localStorage.getItem('subgen.installed')) {
+      localStorage.setItem('subgen.installed', '1');
+      send('install');
+    }
+  } catch (e) { /* noop */ }
+  send('launch');
+}
+
+/* ---------- 건의하기 ---------- */
+function openFeedback() {
+  $('feedbackText').value = '';
+  $('feedbackEmail').value = '';
+  $('feedbackModal').hidden = false;
+  setTimeout(() => $('feedbackText').focus(), 50);
+}
+function closeFeedback() {
+  $('feedbackModal').hidden = true;
+}
+async function submitFeedback() {
+  const msg = $('feedbackText').value.trim();
+  if (!msg) { toast('내용을 입력해주세요.', 'error'); $('feedbackText').focus(); return; }
+  if (!FEEDBACK_ACCESS_KEY) { toast('건의 기능이 아직 설정되지 않았습니다.', 'error'); return; }
+  const email = $('feedbackEmail').value.trim();
+  const btn = $('feedbackSubmit');
+  btn.disabled = true;
+  const prevLabel = btn.textContent;
+  btn.textContent = '전송 중…';
+  try {
+    const payload = {
+      access_key: FEEDBACK_ACCESS_KEY,
+      subject: '[자막 생성기] 건의 / 버그 제보',
+      from_name: '자막 생성기 사용자',
+      message: `${msg}\n\n---\n앱: ${navigator.userAgent}`,
+    };
+    if (email) payload.replyto = email;
+    const res = await fetch('https://api.web3forms.com/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      toast('건의가 전송되었습니다. 감사합니다!', 'ok');
+      closeFeedback();
+    } else {
+      toast(`전송 실패: ${(data && data.message) || res.status}`, 'error');
+    }
+  } catch (e) {
+    toast('전송 실패: 인터넷 연결을 확인해주세요.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+  }
+}
+
 function toggleTheme() {
   settings.theme = settings.theme === 'day' ? 'night' : 'day';
   saveSettings();
@@ -836,6 +915,7 @@ function saveSettingsModal() {
   settings.overwrite = $('setOverwrite').value;
   settings.subBackup = $('setSubBackup').value;
   settings.updateMode = $('setAutoUpdate').value;
+  settings.analytics = $('setAnalytics').checked;
   settings.prompt = $('setPrompt').value.trim();
   saveSettings();
   populateProfiles();
@@ -852,14 +932,18 @@ function saveSettingsModal() {
 function init() {
   populateSelects();
   applyTheme();
+  pingAnalytics();
   window.api.onEvent(handleEvent);
 
   $('openFolderBtn').addEventListener('click', openFolder);
   $('generateBtn').addEventListener('click', generate);
   $('translateBtn').addEventListener('click', translateExisting);
   $('themeBtn').addEventListener('click', toggleTheme);
-  $('sponsorBtn').addEventListener('click', () =>
-    window.api.openExternal('https://github.com/sponsors/CreamMeatball'));
+  $('feedbackBtn').addEventListener('click', openFeedback);
+  $('feedbackClose').addEventListener('click', closeFeedback);
+  $('feedbackCancel').addEventListener('click', closeFeedback);
+  $('feedbackSubmit').addEventListener('click', submitFeedback);
+  $('feedbackModal').addEventListener('click', (e) => { if (e.target.id === 'feedbackModal') closeFeedback(); });
   $('backendSel').addEventListener('change', maybeApiNotice);
 
   // 업데이트
