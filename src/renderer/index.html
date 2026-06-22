@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>자막 생성기</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="setupOverlay" class="setup-overlay">
+    <div class="setup-box">
+      <div class="spinner big"></div>
+      <h2 id="setupTitle">초기 설정 중…</h2>
+      <p id="setupMsg" class="muted">필요한 구성요소를 준비하고 있습니다.</p>
+      <div class="setup-progress"><span id="setupBar"></span></div>
+      <p id="setupDetail" class="setup-detail"></p>
+      <button id="setupRetry" class="btn btn-primary" hidden>다시 시도</button>
+    </div>
+  </div>
+
+  <div id="tutorialOverlay" class="tut-overlay" hidden>
+    <div class="tut-box">
+      <button id="tutClose" class="tut-x" title="닫기">✕</button>
+      <h2 id="tutTitle">사용 가이드</h2>
+      <div id="tutBody" class="tut-body"></div>
+      <div class="tut-foot">
+        <button id="tutNever" class="btn btn-ghost btn-sm">다시 보지 않기</button>
+        <span class="muted"><span id="tutPage">1</span> / 2</span>
+        <div class="tut-nav">
+          <button id="tutPrev" class="btn btn-sm" hidden>← 이전</button>
+          <button id="tutNext" class="btn btn-primary btn-sm">다음 →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🎬</span>
+      <span class="title">자막 생성기</span>
+      <span class="badge" id="deviceBadge">엔진 준비 중…</span>
+    </div>
+    <div class="top-actions">
+      <button id="sponsorBtn" class="btn btn-ghost" title="개발자 후원 (GitHub Sponsors)">♥ 후원하기</button>
+      <button id="themeBtn" class="btn btn-ghost" title="테마 전환 (Day/Night)">🌙</button>
+      <button id="openFolderBtn" class="btn btn-primary">📁 폴더 열기</button>
+      <button id="settingsBtn" class="btn btn-ghost" title="설정">⚙</button>
+    </div>
+  </header>
+
+  <div class="activity" id="activity" hidden>
+    <div class="activity-bar"><span></span></div>
+    <div class="activity-text" id="activityText"></div>
+  </div>
+
+  <main class="layout">
+    <!-- 좌측: 파일 리스트 -->
+    <section class="panel files">
+      <div class="panel-head">
+        <h2>영상 파일</h2>
+        <div class="panel-head-actions">
+          <label class="chk"><input type="checkbox" id="selectAll" /> 전체</label>
+          <span class="muted" id="selCount">선택 0</span>
+        </div>
+      </div>
+      <div class="folder-path muted" id="folderPath">폴더를 열어 영상을 불러오세요.</div>
+      <input id="fileSearch" class="file-search" type="text" placeholder="🔍 제목으로 검색…" />
+      <ul class="file-list" id="fileList"></ul>
+      <div class="empty" id="filesEmpty">
+        <p>여기에 영상 목록이 표시됩니다.</p>
+        <p class="muted">드래그로 여러 개를 한 번에 선택할 수 있어요.</p>
+      </div>
+    </section>
+
+    <!-- 중앙 컨트롤 + 우측 큐 -->
+    <section class="panel queue">
+      <div class="panel-head">
+        <h2>작업 큐</h2>
+        <div class="panel-head-actions">
+          <span class="muted" id="queueSummary">대기 0 · 진행 0 · 완료 0</span>
+          <button id="cancelAllBtn" class="btn btn-ghost btn-sm" disabled>전체 취소</button>
+        </div>
+      </div>
+      <div class="queue-list" id="queueList"></div>
+      <div class="empty" id="queueEmpty">
+        <p>선택한 영상으로 자막 생성을 시작하면 여기에 표시됩니다.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- 하단 액션 바 -->
+  <footer class="actionbar">
+    <div class="ctrl">
+      <label>모델</label>
+      <select id="modelSel"></select>
+    </div>
+    <div class="ctrl">
+      <label>번역 모델</label>
+      <select id="backendSel">
+        <option value="none">번역 안함</option>
+        <option value="google">Google 번역 (API)</option>
+        <option value="kakao">카카오 번역 (API)</option>
+        <option value="online">DeepL (API)</option>
+        <option value="nllb">NLLB 600M (로컬)</option>
+        <option value="nllb-1.3b">NLLB 1.3B (로컬)</option>
+      </select>
+    </div>
+    <div class="ctrl">
+      <label>원본 언어</label>
+      <select id="langSel"></select>
+    </div>
+    <div class="ctrl">
+      <label>번역(대상)</label>
+      <select id="targetSel"></select>
+    </div>
+    <div class="ctrl">
+      <label>프로필</label>
+      <select id="profileSel"></select>
+    </div>
+    <div class="ctrl">
+      <label>번역 프로필</label>
+      <select id="transProfileSel"></select>
+    </div>
+    <div class="ctrl">
+      <label>포맷</label>
+      <select id="fmtSel">
+        <option value="srt">SRT</option>
+        <option value="smi">SMI</option>
+      </select>
+    </div>
+    <div class="ctrl">
+      <label>동시 실행</label>
+      <input type="number" id="concInput" min="1" max="8" value="1" />
+    </div>
+    <div class="spacer"></div>
+    <button id="translateBtn" class="btn btn-translate btn-lg" disabled
+            title="기존 자막(.srt/.smi)이 있는 영상만 선택해 번역만 수행합니다">▶ 기존 자막 번역</button>
+    <button id="generateBtn" class="btn btn-primary btn-lg" disabled>▶ 선택 항목 자막 생성</button>
+  </footer>
+
+  <!-- 설정 모달 -->
+  <div class="modal-backdrop" id="settingsModal" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <h3>설정</h3>
+        <button class="btn btn-ghost" id="settingsClose">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label>기본 모델</label>
+          <select id="setModel"></select>
+          <p class="hint">tiny=빠름/저정확, large-v3=느림/고정확. 처음 쓰는 모델은 자동 다운로드됩니다.</p>
+        </div>
+        <div class="field">
+          <label>기본 원본 언어</label>
+          <select id="setLang"></select>
+        </div>
+        <div class="field">
+          <label>자막 포맷</label>
+          <select id="setFmt">
+            <option value="srt">SRT</option>
+            <option value="smi">SMI</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>동시 실행 수</label>
+          <input type="number" id="setConc" min="1" max="8" value="1" />
+          <p class="hint">병렬 수만큼 모델이 메모리에 올라갑니다. large 계열은 1~2 권장.</p>
+        </div>
+        <div class="field">
+          <label>자막 최대 표시 시간 (초)<span class="help" title="한 자막이 화면에 떠 있는 최대 시간입니다. Whisper가 침묵 구간까지 자막을 길게 잡아 앞 대사가 오래 잔존하는 문제를 방지합니다(꼬리 침묵 트림). 0이면 무제한. 권장 5~8초.">?</span></label>
+          <input type="number" id="setMaxDur" min="0" max="30" step="0.5" value="7" />
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="setWordTs" /> 정확한 타임스탬프 (단어 단위)<span class="help" title="단어 단위 정렬로 자막의 시작/끝 시각을 정확히 맞춥니다. 대사 시작이 0:00 등으로 어긋나거나 자막이 늦게/일찍 뜨는 문제를 줄입니다. 약간의 추가 연산이 듭니다.">?</span></label>
+        </div>
+        <div class="field">
+          <label><input type="checkbox" id="setReduceHallu" /> 환각 줄이기 (무음·배경음 가짜 자막 억제)<span class="help" title="이전 문맥 참조를 꺼서(condition_on_previous_text off) 무음/배경음 구간의 가짜 자막·반복 드리프트를 줄입니다. 깔끔한 음성에선 끄는 편이 품질이 더 나을 수 있으니, 환각이 보일 때 켜세요.">?</span></label>
+        </div>
+        <div class="field">
+          <label>기존 자막이 있으면<span class="help" title="대상 영상에 같은 이름의 자막이 이미 있을 때 처리. 덮어쓰기=새로 만들어 교체, 건너뛰기=전사하지 않고 통과(시간 절약), 다르게 저장=파일.1.srt 처럼 새 이름으로.">?</span></label>
+          <select id="setOverwrite">
+            <option value="overwrite">덮어쓰기</option>
+            <option value="skip">건너뛰기</option>
+            <option value="rename">다르게 저장</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>기존 자막 번역 시 저장<span class="help" title="'기존 자막 번역' 기능으로 번역할 때 원본 자막 처리. 백업 후 저장=원본을 .원본.srt 로 보관하고 번역본으로 교체, 덮어쓰기=원본을 바로 교체.">?</span></label>
+          <select id="setSubBackup">
+            <option value="backup">백업 후 저장</option>
+            <option value="overwrite">덮어쓰기</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>자동 업데이트<span class="help" title="앱 시작 시 새 버전을 확인합니다. 자동=새 버전을 자동 다운로드한 뒤 '재시작' 안내, 수동=새 버전 알림만 표시. 설치는 항상 사용자가 확인 후 진행됩니다.">?</span></label>
+          <select id="setAutoUpdate">
+            <option value="auto">자동 (다운로드 후 안내)</option>
+            <option value="manual">수동 (알림만)</option>
+          </select>
+          <button class="btn btn-sm" id="checkUpdateBtn" type="button" style="margin-top:8px">지금 업데이트 확인</button>
+        </div>
+        <div class="field">
+          <label>튜닝 프로필 편집 (전사 정확도용)<span class="help" title="전사(받아쓰기) 정확도를 높이는 도메인 프롬프트입니다. 영상에서 실제 말하는 '원본 언어'로 고유명사·전문용어를 적습니다(예: 페이커, 아지르, 바론). Whisper가 그 어휘를 더 정확히 인식합니다. ※ 번역에는 영향을 주지 않습니다.">?</span></label>
+          <div class="row-inline">
+            <select id="setProfile"></select>
+            <button class="btn btn-sm" id="profNewBtn" type="button">+ 새 프로필</button>
+            <button class="btn btn-sm" id="profDelBtn" type="button">삭제</button>
+          </div>
+          <input id="setProfName" placeholder="프로필 이름 (예: LCK 중계)" />
+          <textarea id="setProfText" rows="5" placeholder="이 영상 도메인의 고유명사·용어를 원본(말하는) 언어로 적습니다.
+예: 리그 오브 레전드 중계. 페이커, 아지르, 바론, 한타, 갱킹."></textarea>
+          <p class="hint">메인 화면 '프로필'에서 선택해 적용합니다. 직접 새 프로필을 추가할 수 있습니다.</p>
+        </div>
+        <div class="field">
+          <label>추가 용어 (선택, 위 프로필에 더해 1회성 적용)<span class="help" title="선택한 튜닝 프로필에 '이번 작업에만' 임시로 덧붙이는 용어입니다. 프로필 자체를 수정하지 않고 한두 단어를 잠깐 더하고 싶을 때 사용하세요. 역시 원본 언어로 적습니다.">?</span></label>
+          <textarea id="setPrompt" rows="2" placeholder="예: 페이커, 쵸비, 데프트"></textarea>
+        </div>
+        <div class="field">
+          <label>번역 대상 언어</label>
+          <select id="setTarget"></select>
+          <p class="hint">'번역 안 함'이면 원어 자막만 생성합니다. 기본: 한국어.</p>
+        </div>
+        <div class="field">
+          <label>번역 백엔드</label>
+          <select id="setBackend">
+            <option value="none">번역 안함</option>
+            <option value="google">Google 번역 (API)</option>
+            <option value="kakao">카카오 번역 (API)</option>
+            <option value="online">DeepL (API)</option>
+            <option value="nllb">NLLB-200 600M (로컬)</option>
+            <option value="nllb-1.3b">NLLB-200 1.3B (로컬)</option>
+          </select>
+          <p class="hint">⚠ 로컬 NLLB는 품질이 부족할 수 있어 <b>API 번역(Google·카카오·DeepL) 사용을 권장</b>합니다. API는 아래 키 입력이 필요합니다.</p>
+        </div>
+        <div class="field">
+          <label>DeepL API 키</label>
+          <input type="password" id="setDeeplKey" placeholder="DeepL 번역 사용 시 입력" />
+        </div>
+        <div class="field">
+          <label>Google 번역 API 키</label>
+          <input type="password" id="setGoogleKey" placeholder="Google Cloud Translation API 키" />
+        </div>
+        <div class="field">
+          <label>카카오 번역 REST API 키</label>
+          <input type="password" id="setKakaoKey" placeholder="Kakao Developers REST API 키" />
+        </div>
+
+        <hr class="sep" />
+        <div class="field">
+          <label>번역 프로필 (용어집) 편집<span class="help" title="번역 결과에서 고유명사 표기를 강제합니다. 형식: '원문 => 번역'(예: Faker => 페이커). 오른쪽을 비우면 원문 그대로 유지(번역 안 함). ※ 전사가 아니라 NLLB/DeepL 번역 단계에 적용됩니다.">?</span></label>
+          <div class="row-inline">
+            <select id="setTransProfile"></select>
+            <button class="btn btn-sm" id="transNewBtn" type="button">+ 새 프로필</button>
+            <button class="btn btn-sm" id="transDelBtn" type="button">삭제</button>
+          </div>
+          <input id="setTransName" placeholder="프로필 이름 (예: LoL 인명 표기)" />
+          <textarea id="setTransText" rows="6" placeholder="한 줄에 하나씩:
+Faker => 페이커
+Azir => 아지르
+Worlds =>     (오른쪽을 비우면 원문 유지)"></textarea>
+          <p class="hint">'원문 => 번역' 형식. 오른쪽을 비우면 그 단어는 번역하지 않고 그대로 둡니다. 메인 화면의 '번역 프로필'에서 선택해 적용합니다.</p>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost btn-sm" id="settingsReset" style="margin-right:auto">설정 초기화</button>
+        <button class="btn btn-primary" id="settingsSave">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="updateBar" class="update-bar" hidden>
+    <span id="updateMsg"></span>
+    <button id="updateAction" class="btn btn-sm btn-primary" hidden></button>
+    <button id="updateDismiss" class="btn btn-sm btn-ghost">나중에</button>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

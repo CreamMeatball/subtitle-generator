@@ -1,0 +1,23 @@
+# 의존성 / 빌드 산출물
+node_modules/
+dist/
+
+# 빌드용 동봉 런타임(스크립트로 재생성: npm run fetch-runtime) — 용량 커서 커밋 제외
+runtime/
+
+# Python
+**/__pycache__/
+*.pyc
+*.pyo
+
+# 로그 / OS / 임시
+*.log
+.DS_Store
+Thumbs.db
+*.tmp
+
+# 에디터
+.vscode/
+.idea/
+
+# 참고: build/icon.ico, build/icon.png(소스 아이콘)와 logo.png 는 커밋합니다.

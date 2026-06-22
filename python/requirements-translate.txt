@@ -1,0 +1,13 @@
+# 번역(NLLB) + 커스텀 HuggingFace 모델 변환용 의존성.
+# - 로컬 NLLB-200 번역을 쓰려면 필요
+# - 커스텀 모델(한국어/anime-whisper 등)을 처음 선택할 때 CT2 변환에도 필요
+# (기본 모델 tiny~large-v3로 전사만 할 경우엔 불필요)
+transformers>=4.40
+sentencepiece>=0.1.99
+# torch: CPU 버전은 아래로 충분. GPU(CUDA) 가속을 원하면 PyTorch 공식 안내대로
+#   CUDA 빌드를 설치하세요: https://pytorch.org/get-started/locally/
+#   예) pip install torch --index-url https://download.pytorch.org/whl/cu121
+torch>=2.1
+
+# 온라인 DeepL 백엔드를 쓸 경우에만 필요:
+requests>=2.31

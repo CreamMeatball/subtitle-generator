@@ -1,0 +1,17 @@
+# 패키지 앱이 첫 실행 시 격리 venv에 자동 설치하는 의존성.
+# (개발 모드에서는 사용자가 직접 설치)
+#
+# - faster-whisper: STT 엔진(ctranslate2·av·onnxruntime·tokenizers·huggingface-hub 포함)
+# - transformers/sentencepiece: 번역(NLLB) 토크나이저 + CT2 변환
+# - torch: NLLB를 CT2로 변환할 때 1회만 필요(기본 PyPI = CPU 빌드로 충분).
+#          번역 추론 자체는 ctranslate2(GPU)로 동작하므로 CUDA torch 불필요.
+# - requests: 온라인 DeepL 백엔드(선택)
+#
+# GPU 가속 런타임(nvidia-cublas-cu12 / nvidia-cudnn-cu12)은 설치 파일에 내장하지 않고,
+# NVIDIA GPU가 감지될 때만 부트스트랩이 별도로 설치합니다(공식 PyPI 휠).
+
+faster-whisper>=1.1.0
+transformers>=4.40
+sentencepiece>=0.1.99
+torch
+requests>=2.31

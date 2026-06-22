@@ -1,0 +1,72 @@
+{
+  "name": "subtitle-generator",
+  "version": "1.0.0",
+  "description": "Whisper 기반 자막 자동 생성기 (Electron + Python)",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "fetch-runtime": "powershell -ExecutionPolicy Bypass -File scripts/fetch-runtime.ps1",
+    "dist": "electron-builder"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.subtitlegenerator.app",
+    "productName": "SubtitleGenerator",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "CreamMeatball",
+        "repo": "subtitle-generator"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "runtime/python",
+        "to": "python"
+      },
+      {
+        "from": "runtime/ffmpeg",
+        "to": "ffmpeg"
+      },
+      {
+        "from": "python",
+        "to": "engine",
+        "filter": [
+          "**/*.py",
+          "requirements-app.txt"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "artifactName": "SubtitleGenerator-Setup-${version}.${ext}"
+    }
+  }
+}
