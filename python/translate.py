@@ -28,6 +28,23 @@ class TranslationError(Exception):
     pass
 
 
+def _http_request(url, method="GET", data=None, headers=None, timeout=30):
+    """stdlib(urllib)만으로 HTTP 요청. (status_code, body_text) 반환 — requests 불필요."""
+    import urllib.request
+    import urllib.error
+    req = urllib.request.Request(url, data=data, headers=headers or {}, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return getattr(resp, "status", 200), resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", "replace")
+        except Exception:
+            pass
+        return e.code, body
+
+
 # Whisper 언어코드 → NLLB FLORES-200 코드
 NLLB_CODES = {
     "ko": "kor_Hang", "en": "eng_Latn", "ja": "jpn_Jpan",
@@ -153,16 +170,19 @@ class OnlineTranslator:
     def translate(self, texts, src_code, tgt_code, on_log=None,
                   on_progress=None, should_cancel=None, batch_size=40):
         if not self.api_key:
-            raise TranslationError("온라인 번역 API 키가 설정되지 않았습니다.")
-        try:
-            import requests
-        except Exception:
-            raise TranslationError("requests 라이브러리가 필요합니다: pip install requests")
+            raise TranslationError("DeepL API 키가 설정되지 않았습니다(설정 → DeepL API 키).")
+        import json
+        import urllib.parse
+        key = self.api_key.strip()
+        # 무료 키(끝이 :fx)는 api-free, 유료 키는 api 도메인
+        base = ("https://api-free.deepl.com/v2/translate"
+                if key.endswith(":fx") else "https://api.deepl.com/v2/translate")
         tgt = self._DEEPL.get((tgt_code or "").lower())
         if not tgt:
             raise TranslationError(f"DeepL 미지원 대상 언어: {tgt_code}")
         src = self._DEEPL.get((src_code or "").lower())
-        url = "https://api-free.deepl.com/v2/translate"
+        headers = {"Authorization": f"DeepL-Auth-Key {key}",
+                   "Content-Type": "application/x-www-form-urlencoded"}
         out = []
         total = max(len(texts), 1)
         for i in range(0, len(texts), batch_size):
@@ -170,16 +190,14 @@ class OnlineTranslator:
                 from transcribe import CancelledError
                 raise CancelledError()
             chunk = texts[i:i + batch_size]
-            data = [("text", t) for t in chunk]
-            data.append(("target_lang", tgt))
+            fields = [("text", t) for t in chunk] + [("target_lang", tgt)]
             if src:
-                data.append(("source_lang", src))
-            r = requests.post(url, data=data,
-                              headers={"Authorization": f"DeepL-Auth-Key {self.api_key}"},
-                              timeout=30)
-            if r.status_code != 200:
-                raise TranslationError(f"DeepL 오류 {r.status_code}: {r.text[:200]}")
-            out.extend([x["text"] for x in r.json().get("translations", [])])
+                fields.append(("source_lang", src))
+            body = urllib.parse.urlencode(fields).encode("utf-8")
+            status, text = _http_request(base, "POST", body, headers)
+            if status != 200:
+                raise TranslationError(f"DeepL 오류 {status}: {text[:200]}")
+            out.extend(x["text"] for x in json.loads(text).get("translations", []))
             if on_progress:
                 on_progress(min(1.0, (i + len(chunk)) / total))
         return out
@@ -354,10 +372,13 @@ class GoogleTranslator:
     def translate(self, texts, src_code, tgt_code, on_log=None,
                   on_progress=None, should_cancel=None, batch_size=64):
         if not self.api_key:
-            raise TranslationError("Google 번역 API 키가 필요합니다(설정 → 온라인 API 키).")
+            raise TranslationError("Google 번역 API 키가 필요합니다(설정 → Google 번역 API 키).")
         import html as _h
-        import requests
-        url = "https://translation.googleapis.com/language/translate/v2"
+        import json
+        import urllib.parse
+        base = ("https://translation.googleapis.com/language/translate/v2?key="
+                + urllib.parse.quote(self.api_key.strip()))
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
         out = []
         total = max(len(texts), 1)
         for i in range(0, len(texts), batch_size):
@@ -365,15 +386,16 @@ class GoogleTranslator:
                 from transcribe import CancelledError
                 raise CancelledError()
             chunk = texts[i:i + batch_size]
-            data = [("q", t) for t in chunk]
-            data.append(("target", self._code(tgt_code)))
+            fields = [("q", t) for t in chunk]
+            fields.append(("target", self._code(tgt_code)))
             if src_code and src_code not in ("auto", "", None):
-                data.append(("source", self._code(src_code)))
-            data.append(("format", "text"))
-            r = requests.post(url, params={"key": self.api_key}, data=data, timeout=30)
-            if r.status_code != 200:
-                raise TranslationError(f"Google 오류 {r.status_code}: {r.text[:200]}")
-            trs = r.json().get("data", {}).get("translations", [])
+                fields.append(("source", self._code(src_code)))
+            fields.append(("format", "text"))
+            body = urllib.parse.urlencode(fields).encode("utf-8")
+            status, text = _http_request(base, "POST", body, headers)
+            if status != 200:
+                raise TranslationError(f"Google 오류 {status}: {text[:200]}")
+            trs = json.loads(text).get("data", {}).get("translations", [])
             out.extend(_h.unescape(t.get("translatedText", "")) for t in trs)
             if on_progress:
                 on_progress(min(1.0, (i + len(chunk)) / total))
@@ -393,10 +415,11 @@ class KakaoTranslator:
     def translate(self, texts, src_code, tgt_code, on_log=None,
                   on_progress=None, should_cancel=None, batch_size=1):
         if not self.api_key:
-            raise TranslationError("카카오 번역 REST API 키가 필요합니다(설정 → 온라인 API 키).")
-        import requests
-        url = "https://dapi.kakao.com/v2/translation/translate"
-        headers = {"Authorization": f"KakaoAK {self.api_key}"}
+            raise TranslationError("카카오 번역 REST API 키가 필요합니다(설정 → 카카오 번역 REST API 키).")
+        import json
+        import urllib.parse
+        base = "https://dapi.kakao.com/v2/translation/translate"
+        headers = {"Authorization": f"KakaoAK {self.api_key.strip()}"}
         src = self._code(src_code) if src_code not in ("auto", "", None) else "kr"
         tgt = self._code(tgt_code)
         out = []
@@ -405,12 +428,11 @@ class KakaoTranslator:
             if should_cancel and should_cancel():
                 from transcribe import CancelledError
                 raise CancelledError()
-            r = requests.get(url, headers=headers,
-                             params={"src_lang": src, "target_lang": tgt, "query": t},
-                             timeout=30)
-            if r.status_code != 200:
-                raise TranslationError(f"카카오 오류 {r.status_code}: {r.text[:200]}")
-            sents = r.json().get("translated_text", [])
+            qs = urllib.parse.urlencode({"src_lang": src, "target_lang": tgt, "query": t})
+            status, text = _http_request(f"{base}?{qs}", "GET", None, headers)
+            if status != 200:
+                raise TranslationError(f"카카오 오류 {status}: {text[:200]}")
+            sents = json.loads(text).get("translated_text", [])
             out.append(" ".join(" ".join(s) for s in sents) if sents else "")
             if on_progress and (i % 5 == 0 or i == len(texts) - 1):
                 on_progress(min(1.0, (i + 1) / total))
