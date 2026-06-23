@@ -637,6 +637,107 @@ function renderTut() {
 function closeTut() { $('tutorialOverlay').hidden = true; }
 function neverTut() { settings.tutorialDone = true; saveSettings(); closeTut(); }
 
+/* ---------- Q&A (자주 묻는 질문) ---------- */
+const FAQ_PAGES = [
+  {
+    title: 'Q&A — 자막 생성이 안 돼요 (1)',
+    html: `<div class="faq-item"><div class="faq-q">Q. "Requested float16 compute type … do not support efficient float16" 오류가 떠요.</div>
+      <div class="faq-a">비교적 오래된 그래픽카드(예: GTX 10 시리즈)는 float16 연산을 효율적으로 지원하지 않아 생기던 문제입니다.
+      <b>최신 버전에서는 자동으로 지원되는 방식(int8 등)으로 전환</b>되도록 고쳐졌습니다. 앱을 최신 버전으로 업데이트하면 해결됩니다.
+      그래도 안 되면 <b>설정(⚙) → ‘의존성 재설치’</b>를 눌러주세요.</div></div>
+
+      <div class="faq-item"><div class="faq-q">Q. "cublas64_12.dll … not found" 또는 "[WinError 1114] DLL 초기화 실패"가 떠요.</div>
+      <div class="faq-a">GPU 가속에 필요한 NVIDIA 라이브러리(cuBLAS·cuDNN) 로딩 문제입니다.
+      <b>최신 버전에서는 별도의 CUDA 설치 없이도 자동으로 잡히도록 고쳐졌습니다.</b> 업데이트 후에도 그러면
+      <b>설정(⚙) → ‘의존성 재설치’</b>를 해주세요. 그래도 안 되면 자동으로 CPU로 동작합니다(느리지만 정상 생성).</div></div>
+
+      <div class="faq-item"><div class="faq-q">Q. 자막 생성을 누르면 오류가 나거나 멈춰요.</div>
+      <div class="faq-a">대부분 처음 설치된 라이브러리가 손상됐거나 일부만 설치된 경우입니다.
+      <b>설정(⚙) → ‘🔧 의존성 재설치’</b>를 누르면 런타임을 깨끗이 지우고 다시 설치합니다(인터넷 필요, 수 분 소요). 설정·모델·결과 파일은 유지됩니다.</div></div>`,
+  },
+  {
+    title: 'Q&A — 자막 생성이 안 돼요 (2)',
+    html: `<div class="faq-item"><div class="faq-q">Q. 첫 실행에서 ‘초기 설정’이 실패해요.</div>
+      <div class="faq-a">초기 설정은 <b>인터넷에서 라이브러리를 내려받습니다.</b> 회사·학교 네트워크나 방화벽·백신이 막으면 실패할 수 있어요.
+      ① 인터넷 연결 확인 → ‘다시 시도’, ② 백신/방화벽을 잠시 끄거나 예외 등록, ③ 안정적인 네트워크에서 재시도해 보세요.</div></div>
+
+      <div class="faq-item"><div class="faq-q">Q. 백신(Windows Defender 등)이 위험하다고 경고해요.</div>
+      <div class="faq-a">서명되지 않은 신생 프로그램이라 생기는 <b>오탐</b>입니다. ‘추가 정보 → 실행’ 또는 백신 예외에 등록해 주세요.
+      불안하시면 GitHub의 공식 릴리스에서 받은 파일인지 확인하세요.</div></div>
+
+      <div class="faq-item"><div class="faq-q">Q. GPU가 있는데 CPU로 도는 것 같아요(느려요).</div>
+      <div class="faq-a">GPU 가속은 <b>NVIDIA 그래픽카드 + 최신 드라이버</b>가 필요합니다. GPU 런타임 설치가 실패하면 자동으로 CPU로 동작합니다.
+      <b>설정 → ‘의존성 재설치’</b> 후 다시 시도하면 GPU 가속이 잡히는 경우가 많습니다.</div></div>
+
+      <div class="faq-item"><div class="faq-q">Q. AMD(라데온)/인텔 GPU도 가속되나요?</div>
+      <div class="faq-a">현재 엔진(faster-whisper)은 <b>NVIDIA(CUDA) 전용</b>이라 AMD·인텔 GPU 가속은 지원하지 않습니다.
+      이 경우 <b>CPU로 정상 동작</b>합니다(느릴 뿐 결과는 동일). 빠른 처리가 필요하면 더 작은 모델(small/base)을 권장합니다.
+      AMD GPU 가속은 추후 별도 엔진(whisper.cpp Vulkan) 지원을 검토 중입니다.</div></div>`,
+  },
+  {
+    title: 'Q&A — 사용 방법',
+    html: `<div class="faq-item"><div class="faq-q">Q. 번역은 어떻게 하나요?</div>
+      <div class="faq-a">하단 ‘번역 모델’에서 선택하고 ‘번역(대상)’ 언어를 고르면 됩니다. 품질은 <b>API(Google·카카오·DeepL)</b>를 권장하며,
+      API는 설정(⚙)에서 키 입력이 필요합니다. 로컬(NLLB)은 키 없이 되지만 품질이 낮을 수 있어요.</div></div>
+
+      <div class="faq-item"><div class="faq-q">Q. 이미 자막이 있는 영상만 번역할 수 있나요?</div>
+      <div class="faq-a">네. <b>▶ 기존 자막 번역</b> 버튼은 자막(.srt/.smi)이 있는 영상만 골라 번역만 수행합니다(원본 자동 백업).</div></div>
+
+      <div class="faq-item"><div class="faq-q">Q. 고유명사·전문용어가 자꾸 틀려요.</div>
+      <div class="faq-a">설정(⚙)의 <b>‘튜닝 프로필’</b>에 영상에서 말하는 언어로 용어를 적으면 인식 정확도가 올라갑니다.
+      번역 표기는 <b>‘번역 프로필(용어집)’</b>에서 ‘원문 =&gt; 번역’ 형식으로 지정하세요.</div></div>`,
+  },
+  {
+    title: 'Q&A — 기타',
+    html: `<div class="faq-item"><div class="faq-q">Q. 모델은 어떤 걸 골라야 하나요?</div>
+      <div class="faq-a">빠르고 가벼운 것부터 정확한 순으로 tiny → base → small → medium → large-v3 입니다.
+      처음엔 <b>small</b> 또는 <b>medium</b>을 권장하고, 정확도가 중요하면 large 계열(고사양·VRAM 필요)을 쓰세요.</div></div>
+
+      <div class="faq-item"><div class="faq-q">Q. 자막이 화면에 너무 오래 떠 있어요.</div>
+      <div class="faq-a">설정(⚙)의 <b>‘자막 최대 표시 시간’</b>을 5~7초로 줄이고, ‘정확한 타임스탬프’를 켜보세요.
+      무음 구간 가짜 자막이 보이면 <b>‘환각 줄이기’</b>도 켜보세요.</div></div>
+
+      <div class="faq-item"><div class="faq-q">Q. 더 궁금하거나 버그를 발견했어요.</div>
+      <div class="faq-a">상단 <b>💬 건의하기</b>로 보내주시면 큰 도움이 됩니다. (영상·자막 내용은 전송되지 않습니다.)</div></div>`,
+  },
+];
+let faqPage = 0;
+function openFaq() { faqPage = 0; renderFaq(); $('faqOverlay').hidden = false; }
+function closeFaq() { $('faqOverlay').hidden = true; }
+function renderFaq() {
+  const p = FAQ_PAGES[faqPage];
+  $('faqTitle').textContent = p.title;
+  $('faqBody').innerHTML = p.html;
+  $('faqPage').textContent = faqPage + 1;
+  $('faqTotal').textContent = FAQ_PAGES.length;
+  $('faqPrev').hidden = faqPage === 0;
+  $('faqNext').textContent = faqPage < FAQ_PAGES.length - 1 ? '다음 →' : '닫기';
+}
+
+/* ---------- 의존성 재설치 ---------- */
+async function reinstallRuntime() {
+  const ok = confirm('처음 설치했던 라이브러리/런타임을 모두 지우고 다시 설치합니다.\n'
+    + '· 인터넷 연결이 필요하며 수 분이 걸릴 수 있습니다.\n'
+    + '· 설정·다운로드된 모델·자막 결과 파일은 삭제되지 않습니다.\n\n계속할까요?');
+  if (!ok) return;
+  closeSettings();
+  // 설치 오버레이를 즉시 표시(메인의 setup:progress 이벤트가 이어서 갱신)
+  $('setupOverlay').style.display = 'flex';
+  $('setupTitle').textContent = '재설치 중…';
+  $('setupMsg').textContent = '기존 설치를 제거하고 다시 설치합니다…';
+  $('setupDetail').textContent = '';
+  $('setupBar').style.width = '3%';
+  $('setupRetry').hidden = true;
+  try {
+    const r = await window.api.reinstallRuntime();
+    if (r && r.ok === false) {
+      toast('재설치 실패: ' + (r.error || '알 수 없는 오류'), 'error');
+    }
+  } catch (e) {
+    toast('재설치 요청 실패: ' + (e && e.message || e), 'error');
+  }
+}
+
 function apiKeyFor(backend) {
   if (backend === 'google') return settings.googleKey || null;
   if (backend === 'kakao') return settings.kakaoKey || null;
@@ -944,6 +1045,15 @@ function init() {
   $('feedbackCancel').addEventListener('click', closeFeedback);
   $('feedbackSubmit').addEventListener('click', submitFeedback);
   $('feedbackModal').addEventListener('click', (e) => { if (e.target.id === 'feedbackModal') closeFeedback(); });
+
+  // Q&A (자주 묻는 질문)
+  $('faqBtn').addEventListener('click', openFaq);
+  $('faqClose').addEventListener('click', closeFaq);
+  $('faqPrev').addEventListener('click', () => { if (faqPage > 0) { faqPage--; renderFaq(); } });
+  $('faqNext').addEventListener('click', () => {
+    if (faqPage < FAQ_PAGES.length - 1) { faqPage++; renderFaq(); } else closeFaq();
+  });
+  $('faqOverlay').addEventListener('click', (e) => { if (e.target.id === 'faqOverlay') closeFaq(); });
   $('backendSel').addEventListener('change', maybeApiNotice);
 
   // 업데이트
@@ -977,6 +1087,7 @@ function init() {
   $('settingsBtn').addEventListener('click', openSettings);
   $('settingsClose').addEventListener('click', closeSettings);
   $('settingsSave').addEventListener('click', saveSettingsModal);
+  $('reinstallBtn').addEventListener('click', reinstallRuntime);
   $('settingsReset').addEventListener('click', () => {
     if (!confirm('모든 설정을 기본값으로 초기화할까요? (튜닝/번역 프로필·용어집 포함)\n작업 큐와 설치된 런타임에는 영향 없습니다.')) return;
     try { localStorage.removeItem('subgen.settings'); } catch (e) { /* noop */ }

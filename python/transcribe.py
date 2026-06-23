@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import shutil
 import subprocess
 import tempfile
@@ -21,7 +22,7 @@ os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
-from device import detect_device, DeviceConfig
+from device import detect_device, DeviceConfig, supported_compute_types
 
 
 VIDEO_EXTS = {
@@ -59,6 +60,41 @@ class TranscribeResult:
     language_probability: float = 0.0
     duration: float = 0.0
     device: DeviceConfig = None
+
+
+def _ensure_cuda_dll_path() -> None:
+    """Windows: pip로 설치된 NVIDIA cuBLAS/cuDNN 휠의 bin 폴더를 DLL 검색 경로에 추가.
+
+    CTranslate2(파이썬 휠)는 cublas64_12.dll·cudnn*.dll 을 런타임에 동적 로드하지만,
+    pip 휠이 깐 DLL 폴더(site-packages/nvidia/*/bin)는 기본 DLL 검색 경로에 없다.
+    이를 추가하지 않으면 다음 오류가 난다:
+      - "Library cublas64_12.dll is not found or cannot be loaded"
+      - "[WinError 1114] DLL 초기화 루틴을 실행할 수 없습니다"
+    이 함수 덕분에 CUDA Toolkit/cuDNN을 시스템에 따로 설치하지 않아도 GPU가 동작한다.
+    """
+    if os.name != "nt":
+        return
+    import glob
+    seen = set()
+    for base in list(sys.path):
+        if not base or not os.path.isdir(base):
+            continue
+        nv = os.path.join(base, "nvidia")
+        if not os.path.isdir(nv):
+            continue
+        for bindir in glob.glob(os.path.join(nv, "*", "bin")):
+            if not os.path.isdir(bindir):
+                continue
+            real = os.path.normcase(os.path.abspath(bindir))
+            if real in seen:
+                continue
+            seen.add(real)
+            try:
+                os.add_dll_directory(bindir)   # Python 3.8+ Windows DLL 검색 경로
+            except Exception:
+                pass
+            # 일부 환경(자식 프로세스/구버전 로더) 대비 PATH에도 선행 추가
+            os.environ["PATH"] = bindir + os.pathsep + os.environ.get("PATH", "")
 
 
 def find_ffmpeg() -> str:
@@ -207,6 +243,7 @@ def load_model(opts: TranscribeOptions,
     """
     if on_progress:
         on_progress(-1.0, "[1/4] 라이브러리 로드 중...")
+    _ensure_cuda_dll_path()   # GPU용 cuBLAS/cuDNN DLL 경로 보강 (로드 실패 방지)
     from faster_whisper import WhisperModel
 
     if on_progress:
@@ -232,14 +269,70 @@ def load_model(opts: TranscribeOptions,
     hb_msg = ("(최초 1회) 모델 다운로드 중" if not cached else "모델 로드 중")
     with _Heartbeat(hb_msg, on_progress):
         # 캐시/변환된 모델은 local_files_only=True 로 온라인 확인을 건너뛴다.
-        model = WhisperModel(
-            model_arg,
-            device=cfg.device,
-            compute_type=cfg.compute_type,
-            download_root=opts.model_dir,
-            local_files_only=cached,
-        )
+        model, cfg = _load_with_fallback(
+            WhisperModel, model_arg, cfg, opts.model_dir, cached, on_progress)
     return model, cfg
+
+
+def _compute_type_attempts(device: str, preferred: str) -> list:
+    """이 디바이스에서 시도할 compute_type 우선순위 목록(중복 제거)."""
+    if device == "cuda":
+        order = [preferred, "int8_float16", "int8", "float32"]
+    else:
+        order = [preferred, "int8", "float32"]
+    sup = supported_compute_types(device)
+    out = []
+    for ct in order:
+        if ct in out:
+            continue
+        if sup and ct not in sup:
+            continue  # 지원 안 하는 타입은 건너뜀
+        out.append(ct)
+    if not out:  # sup 조회 실패 등으로 비면 안전한 기본값
+        out = [preferred] if device == "cuda" else ["int8", "float32"]
+    return out
+
+
+def _load_with_fallback(WhisperModel, model_arg, cfg, model_dir, cached, on_progress):
+    """compute_type → (필요 시) GPU→CPU 순으로 단계적 폴백하며 모델을 로드한다.
+
+    - GTX 10 시리즈 등에서 float16 미지원 시 int8/float32로 자동 전환.
+    - cuDNN/cuBLAS 로드 실패, VRAM 부족(OOM) 등 GPU 로드 자체가 실패하면 CPU로 폴백.
+    """
+    # (device, [compute_types]) 시도 순서
+    plans = [(cfg.device, _compute_type_attempts(cfg.device, cfg.compute_type))]
+    if cfg.device == "cuda":
+        plans.append(("cpu", _compute_type_attempts("cpu", "int8")))
+
+    last_err = None
+    for device, ctypes in plans:
+        for ct in ctypes:
+            try:
+                model = WhisperModel(
+                    model_arg, device=device, compute_type=ct,
+                    download_root=model_dir, local_files_only=cached,
+                )
+                used = DeviceConfig(device=device, compute_type=ct,
+                                    cuda_count=cfg.cuda_count)
+                if on_progress:
+                    if device != cfg.device:
+                        on_progress(-1.0,
+                                    f"[!] GPU 로드 실패 → CPU로 전환합니다 ({ct}).")
+                    elif ct != cfg.compute_type:
+                        on_progress(-1.0,
+                                    f"[!] {cfg.compute_type} 미지원 GPU → {ct}(으)로 전환합니다.")
+                return model, used
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                msg = str(e)
+                if on_progress:
+                    on_progress(-1.0, f"[재시도] {device}/{ct} 로드 실패: {msg[:120]}")
+                continue
+    # 모든 시도 실패
+    raise RuntimeError(
+        "모델 로드에 실패했습니다. GPU 드라이버/메모리 문제이거나 설치가 손상되었을 수 "
+        "있습니다. 설정 > '의존성 재설치'를 시도하거나 더 작은 모델을 선택해 주세요.\n"
+        f"마지막 오류: {last_err}")
 
 
 def run_transcription(

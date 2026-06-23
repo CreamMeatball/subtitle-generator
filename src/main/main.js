@@ -22,6 +22,7 @@ let win = null;
 let engine = null;
 let rl = null;
 let runtimeInfo = null;   // { python, engineDir, ffmpeg }
+let lastFolder = null;    // 마지막으로 연 폴더(다음 다이얼로그 기본 경로)
 
 function resolveFfmpeg() {
   if (runtimeInfo && runtimeInfo.ffmpeg) return runtimeInfo.ffmpeg;
@@ -86,6 +87,15 @@ function sendToEngine(obj) {
   }
 }
 
+// 엔진(python) 프로세스를 정리한다. 런타임 삭제 전 파일 잠금을 풀기 위해 사용.
+function stopEngine() {
+  if (!engine) return;
+  try { sendToEngine({ cmd: 'shutdown' }); } catch (e) { /* noop */ }
+  const e = engine;
+  engine = null; rl = null;
+  setTimeout(() => { try { if (!e.killed) e.kill(); } catch (x) { /* noop */ } }, 300);
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1720,
@@ -128,6 +138,23 @@ app.whenReady().then(() => {
 });
 
 ipcMain.on('setup:retry', () => runSetup());
+
+// 의존성/런타임 재설치: 엔진 종료 → venv 삭제 → 처음부터 재설치(runSetup이 진행상황 통지)
+ipcMain.handle('runtime:reinstall', async () => {
+  try {
+    stopEngine();
+    runtimeInfo = null;
+    await new Promise((r) => setTimeout(r, 700));  // 잠금 해제 대기
+    sendEvent({ type: 'setup:progress', step: 'clean',
+      message: '기존 설치를 제거하는 중…', percent: 3 });
+    await bootstrap.removeRuntime();
+    await runSetup();   // setup:progress/done/error 이벤트로 오버레이 갱신
+    return { ok: true };
+  } catch (e) {
+    sendEvent({ type: 'setup:error', message: (e && e.message) || String(e) });
+    return { ok: false, error: (e && e.message) || String(e) };
+  }
+});
 ipcMain.on('update:check', () => updater.check());
 ipcMain.on('update:download', () => updater.download());
 ipcMain.on('update:install', () => updater.install());
@@ -141,8 +168,21 @@ app.on('window-all-closed', () => {
 
 // ---------- IPC ----------
 ipcMain.handle('dialog:openFolder', async () => {
-  const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
+  let defaultPath = lastFolder;
+  if (!defaultPath) {
+    try { defaultPath = app.getPath('videos'); } catch (e) { /* noop */ }
+    if (!defaultPath) { try { defaultPath = app.getPath('home'); } catch (e) { /* noop */ } }
+  }
+  const r = await dialog.showOpenDialog(win, {
+    title: '영상이 들어있는 폴더 선택',
+    // message는 macOS에서 표시됨. Windows 폴더 선택창은 파일을 숨기고 폴더만 보여줍니다.
+    message: '자막을 만들 영상들이 들어있는 폴더를 선택하세요. (이 창에는 폴더만 표시됩니다)',
+    buttonLabel: '이 폴더 선택',
+    defaultPath: defaultPath || undefined,
+    properties: ['openDirectory'],
+  });
   if (r.canceled || !r.filePaths.length) return null;
+  lastFolder = r.filePaths[0];
   return r.filePaths[0];
 });
 

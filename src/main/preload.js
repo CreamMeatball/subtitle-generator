@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   thumb: (videoPath) => ipcRenderer.invoke('thumb:get', videoPath),
   showInFolder: (p) => ipcRenderer.send('shell:showItem', p),
   retrySetup: () => ipcRenderer.send('setup:retry'),
+  reinstallRuntime: () => ipcRenderer.invoke('runtime:reinstall'),
   openExternal: (url) => ipcRenderer.send('shell:openExternal', url),
   checkUpdate: () => ipcRenderer.send('update:check'),
   downloadUpdate: () => ipcRenderer.send('update:download'),

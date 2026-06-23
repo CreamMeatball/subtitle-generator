@@ -116,8 +116,12 @@ async function ensureRuntime(onProgress) {
   if (hasNvidiaGpu()) {
     report('gpu', 'GPU 가속 런타임 설치 중… (NVIDIA 공식 패키지)', null, 93);
     try {
+      // cuDNN은 9.x로 고정한다. 현재 faster-whisper(ctranslate2 4.x)는 cuDNN 9를
+      // 사용하므로, pip가 향후 비호환 버전(예: 10)을 받아 'DLL 초기화 실패
+      // (WinError 1114)'가 나는 것을 방지한다. DLL 검색 경로는 엔진(transcribe.py)이
+      // 런타임에 추가하므로 CUDA Toolkit 별도 설치는 불필요.
       await run(vpy, ['-m', 'pip', 'install',
-        'nvidia-cublas-cu12', 'nvidia-cudnn-cu12']);
+        'nvidia-cublas-cu12', 'nvidia-cudnn-cu12>=9.1,<10']);
     } catch (e) {
       // GPU 런타임 실패해도 CPU로 자동 동작하므로 무시
       report('gpu', 'GPU 런타임 설치 건너뜀 (CPU로 동작)', null, 97);
@@ -130,6 +134,28 @@ async function ensureRuntime(onProgress) {
   return { python: venvPython(), engineDir: engineDir(), ffmpeg: ffmpegPath() };
 }
 
+/**
+ * 설치된 런타임(venv + 완료 표식)을 삭제한다. 다음 ensureRuntime 호출 시 새로 설치됨.
+ * Windows에서 venv의 python.exe가 사용 중이면 삭제가 실패하므로, 호출 전에
+ * 엔진 프로세스를 반드시 종료해야 한다. 일시적 잠금은 잠깐 대기 후 재시도한다.
+ */
+async function removeRuntime() {
+  if (!isPackaged()) return;  // 개발 모드에는 별도 런타임이 없음
+  const dir = runtimeDir();
+  for (let i = 0; i < 5; i++) {
+    try {
+      if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (e) {
+      // 파일 잠금(EBUSY/EPERM) — 잠깐 기다렸다 재시도
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  }
+  // 마지막 시도: 전체 삭제가 안 되면 표식만이라도 지워 재설치를 강제
+  try { if (fs.existsSync(markerFile())) fs.rmSync(markerFile(), { force: true }); }
+  catch (e) { /* noop */ }
+}
+
 module.exports = {
-  ensureRuntime, engineDir, ffmpegPath, venvPython, runtimeDir, markerFile,
+  ensureRuntime, removeRuntime, engineDir, ffmpegPath, venvPython, runtimeDir, markerFile,
 };
