@@ -167,6 +167,10 @@ app.on('window-all-closed', () => {
 });
 
 // ---------- IPC ----------
+ipcMain.handle('app:version', () => {
+  try { return app.getVersion(); } catch (e) { return ''; }
+});
+
 ipcMain.handle('dialog:openFolder', async () => {
   let defaultPath = lastFolder;
   if (!defaultPath) {

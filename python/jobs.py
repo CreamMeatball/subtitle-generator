@@ -35,6 +35,10 @@ class JobOptions:
     word_timestamps: bool = False
     condition_on_previous_text: bool = True
     hallucination_silence_threshold: Optional[float] = None
+    # 고급 옵션
+    temperature: Optional[float] = None
+    no_repeat_ngram_size: int = 0
+    vad_min_silence_ms: Optional[int] = None
     overwrite_policy: str = "overwrite"  # "overwrite" | "skip" | "rename"
     mode: str = "transcribe"             # "transcribe" | "translate_only"
     subtitle_backup: str = "backup"      # 번역전용: "backup"(원본 백업) | "overwrite"
@@ -62,6 +66,9 @@ class JobOptions:
             word_timestamps=self.word_timestamps,
             condition_on_previous_text=self.condition_on_previous_text,
             hallucination_silence_threshold=self.hallucination_silence_threshold,
+            temperature=self.temperature,
+            no_repeat_ngram_size=self.no_repeat_ngram_size,
+            vad_min_silence_ms=self.vad_min_silence_ms,
             model_dir=self.model_dir,
         )
 

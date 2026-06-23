@@ -91,6 +91,7 @@ def _make_options(raw: dict | None) -> JobOptions:
         "model", "device", "compute_type", "language", "task", "initial_prompt",
         "fmt", "vad_filter", "beam_size", "word_timestamps",
         "condition_on_previous_text", "hallucination_silence_threshold",
+        "temperature", "no_repeat_ngram_size", "vad_min_silence_ms",
         "overwrite_policy", "mode", "subtitle_backup",
         "max_line_chars", "max_subtitle_dur", "output_dir", "model_dir",
         "translate", "target_lang", "translate_backend", "api_key",

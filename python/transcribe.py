@@ -50,6 +50,10 @@ class TranscribeOptions:
     # 환각(hallucination) 억제
     condition_on_previous_text: bool = True   # False면 무음/배경음 환각·반복 드리프트 감소
     hallucination_silence_threshold: Optional[float] = None  # word_timestamps와 함께일 때 효과
+    # 고급 옵션 (None/0 = faster-whisper 기본값 사용)
+    temperature: Optional[float] = None       # 단일값 지정 시 그 값으로 고정(0=결정적). None=기본(폴백)
+    no_repeat_ngram_size: int = 0             # >0이면 n-gram 반복 억제(반복 자막 방지)
+    vad_min_silence_ms: Optional[int] = None  # VAD가 구간을 나누는 최소 침묵 길이(ms). 클수록 덜 끊김
     model_dir: Optional[str] = None       # 모델 캐시 경로
 
 
@@ -358,8 +362,7 @@ def run_transcription(
         hb.__enter__()
         analyzing = True
         try:
-            seg_iter, info = model.transcribe(
-                wav_path,
+            tkwargs = dict(
                 language=language,
                 task=opts.task,
                 initial_prompt=opts.initial_prompt,
@@ -369,6 +372,15 @@ def run_transcription(
                 condition_on_previous_text=opts.condition_on_previous_text,
                 hallucination_silence_threshold=opts.hallucination_silence_threshold,
             )
+            # 고급 옵션: 지정된 경우에만 전달(미지정 시 faster-whisper 기본값 유지)
+            if opts.no_repeat_ngram_size:
+                tkwargs["no_repeat_ngram_size"] = int(opts.no_repeat_ngram_size)
+            if opts.temperature is not None:
+                tkwargs["temperature"] = float(opts.temperature)
+            if opts.vad_min_silence_ms is not None and opts.vad_filter:
+                tkwargs["vad_parameters"] = dict(
+                    min_silence_duration_ms=int(opts.vad_min_silence_ms))
+            seg_iter, info = model.transcribe(wav_path, **tkwargs)
 
             duration = float(getattr(info, "duration", 0.0)) or 0.0
             segments = []

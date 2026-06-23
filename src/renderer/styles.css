@@ -280,6 +280,18 @@ select:focus, input:focus, textarea:focus { outline: none; border-color: var(--p
 .faq-a { font-size: 13.5px; line-height: 1.65; color: var(--muted); }
 .faq-a b { color: var(--text); }
 
+/* 고급 설정 (details) */
+.adv { margin: 6px 0 14px; border: 1px solid var(--line); border-radius: 10px; padding: 4px 12px; }
+.adv summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--text); padding: 8px 0; list-style: revert; }
+.adv summary:hover { color: var(--primary); }
+.adv[open] summary { margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+
+/* 업데이트 변경 내역 */
+.changelog-ver { font-weight: 700; margin: 14px 0 6px; color: var(--primary); }
+.changelog-ver:first-child { margin-top: 0; }
+.changelog-list { margin: 0 0 6px; padding-left: 20px; }
+.changelog-list li { margin-bottom: 6px; }
+
 /* 초기 설정 오버레이 */
 .setup-overlay {
   position: fixed; inset: 0; z-index: 500;

@@ -62,6 +62,8 @@ const DEFAULTS = {
   theme: 'night', apiNoticeShown: false, tutorialDone: false, updateMode: 'auto',
   analytics: true,
   backend: 'none', deeplKey: '', googleKey: '', kakaoKey: '', prompt: '',
+  // 고급(Whisper) — 빈 문자열/기본값은 '엔진 기본값 사용'을 의미
+  vadFilter: true, vadSilence: '', beamSize: 5, temperature: '', noRepeat: 0,
   tuningProfiles: DEFAULT_TUNING.map((p) => ({ ...p })),
   transProfiles: DEFAULT_TRANS.map((p) => ({ ...p })),
   transProfileId: '',
@@ -313,6 +315,12 @@ function applySettingsToUI() {
   $('setSubBackup').value = settings.subBackup || 'backup';
   $('setAutoUpdate').value = settings.updateMode || 'auto';
   $('setAnalytics').checked = settings.analytics !== false;
+  // 고급(Whisper)
+  $('setVadFilter').checked = settings.vadFilter !== false;
+  $('setVadSilence').value = settings.vadSilence === 0 ? '0' : (settings.vadSilence || '');
+  $('setBeamSize').value = settings.beamSize || 5;
+  $('setTemperature').value = settings.temperature === 0 ? '0' : (settings.temperature || '');
+  $('setNoRepeat').value = settings.noRepeat || 0;
   $('setPrompt').value = settings.prompt || '';
   loadProfEditor(profEditId || settings.profileId ||
     ((settings.tuningProfiles && settings.tuningProfiles[0]) || {}).id);
@@ -457,6 +465,8 @@ function onRowMouseEnter(e) {
 function generate() {
   if (selected.size === 0) return;
   syncSettingsFromBar();
+  // API 번역 선택 시 키가 비어 있으면 경고 후 중단
+  if (settings.backend !== 'none' && settings.target && warnIfApiKeyMissing()) return;
   const paths = [...selected].sort((a, b) => a - b).map((i) => files[i].path);
   const tp = (settings.transProfiles || []).find((p) => p.id === settings.transProfileId);
   const tune = (settings.tuningProfiles || []).find((p) => p.id === settings.profileId);
@@ -480,6 +490,14 @@ function generate() {
     api_key: apiKeyFor(settings.backend),
     glossary: tp ? parseGlossary(tp.text) : [],
     tprofile_name: tp ? tp.name : '',
+    // 고급(Whisper)
+    vad_filter: settings.vadFilter !== false,
+    beam_size: Number(settings.beamSize) || 5,
+    no_repeat_ngram_size: Number(settings.noRepeat) || 0,
+    temperature: settings.temperature === '' || settings.temperature == null
+      ? null : Number(settings.temperature),
+    vad_min_silence_ms: settings.vadSilence === '' || settings.vadSilence == null
+      ? null : Number(settings.vadSilence),
   };
   window.api.send({ cmd: 'set_concurrency', value: Number(settings.concurrency) });
   window.api.send({ cmd: 'add', paths, options });
@@ -500,6 +518,7 @@ function translateExisting() {
     toast('먼저 번역 대상 언어를 선택하세요.', 'error');
     return;
   }
+  if (warnIfApiKeyMissing()) return;
   const paths = idxs.map((i) => files[i].path);
   const tp = (settings.transProfiles || []).find((p) => p.id === settings.transProfileId);
   const options = {
@@ -714,6 +733,55 @@ function renderFaq() {
   $('faqNext').textContent = faqPage < FAQ_PAGES.length - 1 ? '다음 →' : '닫기';
 }
 
+/* ---------- 업데이트 변경 내역 (업데이트 후 첫 실행 시 1회) ---------- */
+const CHANGELOG = [
+  { v: '1.0.4', items: [
+    '자막 번역 시 발생하던 오류(re 관련) 수정',
+    'API 번역 선택 시 키가 비어 있으면 경고하도록 개선',
+    'Whisper 고급 설정 추가: VAD 사용·최소 침묵 길이, Beam size, Temperature, 반복 억제',
+    '업데이트 후 변경 내역을 처음 한 번 보여주는 기능 추가',
+  ] },
+  { v: '1.0.3', items: [
+    'GPU 오류 대폭 수정: float16 미지원 그래픽카드 자동 대응',
+    'cuBLAS/cuDNN DLL 로드 문제 해결(CUDA 별도 설치 불필요), 실패 시 자동 CPU 전환',
+    '설정에 ‘의존성 재설치’ 버튼 추가(문제 해결용)',
+    'Q&A(자주 묻는 질문) 버튼 추가',
+    '폴더 선택 창 개선',
+  ] },
+  { v: '1.0.2', items: ['‘건의하기’ 기능 추가'] },
+  { v: '1.0.1', items: ['DeepL 등 API 번역 오류 수정'] },
+];
+function cmpVer(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d > 0 ? 1 : -1;
+  }
+  return 0;
+}
+let appVer = null;
+async function maybeShowChangelog() {
+  try { if (!appVer) appVer = await window.api.appVersion(); } catch (e) { return; }
+  const cur = appVer || '';
+  if (!cur) return;
+  let last = null;
+  try { last = localStorage.getItem('subgen.lastVersion'); } catch (e) { /* noop */ }
+  if (last === cur) return;                 // 같은 버전 → 표시 안 함
+  try { localStorage.setItem('subgen.lastVersion', cur); } catch (e) { /* noop */ }
+  if (!settings.tutorialDone) return;       // 신규 사용자(첫 설치)는 튜토리얼로 충분
+  const entries = last
+    ? CHANGELOG.filter((e) => cmpVer(e.v, last) > 0)   // last 이후 버전들
+    : CHANGELOG.filter((e) => e.v === cur);            // 기록 없으면 현재 버전만
+  if (!entries.length) return;
+  $('changelogBody').innerHTML = entries.map((e) =>
+    `<div class="changelog-ver">v${e.v}</div>`
+    + `<ul class="changelog-list">${e.items.map((i) => `<li>${i}</li>`).join('')}</ul>`
+  ).join('');
+  $('changelogOverlay').hidden = false;
+}
+function closeChangelog() { $('changelogOverlay').hidden = true; }
+
 /* ---------- 의존성 재설치 ---------- */
 async function reinstallRuntime() {
   const ok = confirm('처음 설치했던 라이브러리/런타임을 모두 지우고 다시 설치합니다.\n'
@@ -743,6 +811,25 @@ function apiKeyFor(backend) {
   if (backend === 'kakao') return settings.kakaoKey || null;
   if (backend === 'online' || backend === 'deepl') return settings.deeplKey || null;
   return null;
+}
+
+// API 번역 백엔드인데 키가 비어 있으면 경고 alert. 진행 차단 시 true 반환.
+function apiBackendName(backend) {
+  if (backend === 'google') return 'Google 번역';
+  if (backend === 'kakao') return '카카오 번역';
+  if (backend === 'online' || backend === 'deepl') return 'DeepL';
+  return '';
+}
+function warnIfApiKeyMissing() {
+  const b = settings.backend;
+  const needsKey = (b === 'google' || b === 'kakao' || b === 'online' || b === 'deepl');
+  if (!needsKey) return false;            // 로컬(NLLB) 등은 키 불필요
+  if (apiKeyFor(b)) return false;         // 키 있음 → 통과
+  const name = apiBackendName(b);
+  alert(`${name} 번역을 사용하려면 API 키가 필요합니다.\n\n`
+    + `설정(⚙) → ‘${name} API 키’ 칸에 키를 입력한 뒤 다시 시도하세요.\n`
+    + `키 없이 바로 쓰려면 ‘번역 모델’을 로컬(NLLB)로 바꾸거나, 번역이 필요 없으면 ‘번역 안함’을 선택하세요.`);
+  return true;
 }
 
 // '번역 안함'에서 다른(특히 로컬) 모델로 처음 바꿀 때 API 권장 안내(최초 1회)
@@ -889,6 +976,7 @@ function handleEvent(ev) {
       $('setupBar').style.width = '100%';
       setTimeout(() => { $('setupOverlay').style.display = 'none'; }, 250);
       maybeShowTutorial();
+      maybeShowChangelog();
       break;
     case 'setup:error':
       $('setupOverlay').style.display = 'flex';
@@ -1017,6 +1105,12 @@ function saveSettingsModal() {
   settings.subBackup = $('setSubBackup').value;
   settings.updateMode = $('setAutoUpdate').value;
   settings.analytics = $('setAnalytics').checked;
+  // 고급(Whisper) — 빈칸은 '' 로 저장(엔진 기본값 사용)
+  settings.vadFilter = $('setVadFilter').checked;
+  settings.vadSilence = $('setVadSilence').value.trim();
+  settings.beamSize = Math.min(10, Math.max(1, Number($('setBeamSize').value) || 5));
+  settings.temperature = $('setTemperature').value.trim();
+  settings.noRepeat = Math.min(10, Math.max(0, Number($('setNoRepeat').value) || 0));
   settings.prompt = $('setPrompt').value.trim();
   saveSettings();
   populateProfiles();
@@ -1054,6 +1148,10 @@ function init() {
     if (faqPage < FAQ_PAGES.length - 1) { faqPage++; renderFaq(); } else closeFaq();
   });
   $('faqOverlay').addEventListener('click', (e) => { if (e.target.id === 'faqOverlay') closeFaq(); });
+
+  // 업데이트 변경 내역
+  $('changelogClose').addEventListener('click', closeChangelog);
+  $('changelogOk').addEventListener('click', closeChangelog);
   $('backendSel').addEventListener('change', maybeApiNotice);
 
   // 업데이트

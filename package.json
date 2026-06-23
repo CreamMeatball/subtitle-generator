@@ -1,6 +1,6 @@
 {
   "name": "subtitle-generator",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Whisper 기반 자막 자동 생성기 (Electron + Python)",
   "main": "src/main/main.js",
   "scripts": {

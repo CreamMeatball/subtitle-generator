@@ -2,6 +2,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+  appVersion: () => ipcRenderer.invoke('app:version'),
   openFolder: () => ipcRenderer.invoke('dialog:openFolder'),
   hasSubtitle: (videoPath, fmt) => ipcRenderer.invoke('fs:hasSubtitle', videoPath, fmt),
   findSubtitle: (videoPath) => ipcRenderer.invoke('fs:findSubtitle', videoPath),
